@@ -48,7 +48,7 @@ class Validated(abc.ABC):
         return getattr(instance, self.name)
 
     def __set__(self, instance, value):
-         setattr(instance, self.name, self.validate(value))
+        setattr(instance, self.name, self.validate(value))
 
     def validate(self, value):
         if not self.nullable and value is None:
@@ -63,9 +63,6 @@ class CharField(Validated):
             if type(value) is not str:
                 raise ValueError(f'Invalid value. Value must be str')
         return value
-
-
-
 
 
 class EmailField(CharField):
@@ -119,7 +116,7 @@ class GenderField(Validated):
         super().validate(value)
         if value is not None:
             if type(value) is not int:
-                 raise ValueError(f'Invalid value. Value must be int')
+                raise ValueError(f'Invalid value. Value must be int')
             if not re.match(r"^[0-2]?$", str(value)):
                 raise ValueError("Invalid value. Value must be between 0 and 2 digits.")
         return value
@@ -151,6 +148,7 @@ class ArgumentsField(Validated):
         super().validate(value)
         if type(value) is not dict:
             raise ValueError(f'Invalid value. Value to be dict')
+
         else:
             for key, val in value.items():
                 setattr(self, key, val)
@@ -161,15 +159,21 @@ class ClientsInterestsRequest(object):
     client_ids = ClientIDsField(required=True)
     date = DateField(required=False, nullable=True)
 
-    def clients_interests(request, ctx, store):
-        body = request.get("body")
-        arguments = body.get("arguments")
-        # for key, val in arguments.items():
-        #    setattr(self, key, val)
-        client_ids = arguments.get("client_ids")
-        ctx.update({"nclients": len(client_ids)})
-        response = {str(idx + 1): get_interests(store, client_id) for idx, client_id in enumerate(client_ids)}
-        return OK, response, ctx
+    def __init__(self, request, ctx, store):
+        self.body = request.get("body")
+        arguments = self.body.get("arguments") or dict()
+        if not arguments.get("client_ids"):
+            raise ValueError(f'Invalid arguments {arguments}')
+        self.client_ids = arguments.get("client_ids")
+        self.date = arguments.get("date")
+        self.ctx = ctx
+        self.store = store
+
+    def clients_interests(self):
+        client_ids = self.body.get("arguments").get("client_ids")
+        self.ctx.update({"nclients": len(client_ids) if client_ids else 0})
+        response = {str(idx + 1): get_interests(self.store, client_id) for idx, client_id in enumerate(client_ids)}
+        return OK, response, self.ctx
 
 
 class OnlineScoreRequest(object):
@@ -180,14 +184,26 @@ class OnlineScoreRequest(object):
     birthday = BirthDayField(required=False, nullable=True)
     gender = GenderField(required=False, nullable=True)
 
-    def online_score(request, ctx, store):
-        body = request.get("body")
-        arguments = body.get("arguments")
-        # for key, val in arguments.items():
-        #    setattr(self, key, val)
-        response = {"score": get_score(store, **arguments)}
-        ctx.update({"has": [item for item in arguments if item]})
-        return OK, response, ctx
+    def __init__(self, request, ctx, store):
+        self.body = request.get("body")
+        arguments = self.body.get("arguments") or dict()
+        if (bool(arguments.get("email")) + bool(arguments.get("phone"))) != 2 and \
+                (bool(arguments.get("first_name")) + bool(arguments.get("last_name"))) != 2 and \
+                (bool(arguments.get("birthday")) + (arguments.get("gender") in GENDERS)) != 2:
+            raise ValueError(f'Invalid arguments {arguments}')
+        self.first_name = arguments.get("first_name")
+        self.last_name = arguments.get("last_name")
+        self.email = arguments.get("email")
+        self.phone = arguments.get("phone")
+        self.birthday = arguments.get("birthday")
+        self.gender = arguments.get("gender")
+        self.ctx = ctx
+        self.store = store
+
+    def online_score(self):
+        response = {"score": get_score(self.store, **self.body.get("arguments"))}
+        self.ctx.update({"has": [item for item in self.body.get("arguments") if item]})
+        return OK, response, self.ctx
 
 
 class MethodRequest(object):
@@ -196,6 +212,15 @@ class MethodRequest(object):
     token = CharField(required=True, nullable=True)
     arguments = ArgumentsField(required=True, nullable=True)
     method = CharField(required=True, nullable=False)
+
+    def __init__(self, **kwargs):
+        if "login" not in kwargs or "token" not in kwargs or "method" not in kwargs or "arguments" not in kwargs:
+            raise ValueError("Missing arguments")
+        self.account = kwargs.get("account")
+        self.login = kwargs.get("login")
+        self.method = kwargs.get("method")
+        self.token = kwargs.get("token")
+        self.arguments = kwargs.get("arguments")
 
     @property
     def is_admin(self):
@@ -212,20 +237,30 @@ def check_auth(request):
 
 def method_handler(request, ctx, store):
     response, code = None, None
-    method = {
-        "online_score": OnlineScoreRequest.online_score,
-        "clients_interests": ClientsInterestsRequest.clients_interests,
-    }
     body = request.get("body")
     if not body:
         code = INVALID_REQUEST
+        response = {"error": ERRORS[code]}
     else:
-        current_method = body.get("method")
-        if current_method in method:
-            code, response, ctx = method[current_method](request, ctx, store)
-        else:
-            code = BAD_REQUEST
-            response = {"error": "unknown method"}
+        try:
+            method_request = MethodRequest(**body)
+            if check_auth(method_request):
+                current_method = body.get("method")
+                if current_method == "online_score":
+                    code, response, ctx = OnlineScoreRequest(request, ctx, store).online_score()
+                    if method_request.is_admin:
+                        response = {"score": 42}
+                elif current_method == "clients_interests":
+                    code, response, ctx = ClientsInterestsRequest(request, ctx, store).clients_interests()
+                else:
+                    code = BAD_REQUEST
+                    response = {"error": ERRORS[code]}
+            else:
+                code = FORBIDDEN
+                response = {"error": ERRORS[code]}
+        except ValueError:
+            code = INVALID_REQUEST
+            response = {"error": ERRORS[code]}
     return response, code
 
 
