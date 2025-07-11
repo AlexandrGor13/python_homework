@@ -126,7 +126,7 @@ class ClientIDsField(Validated):
     def validate(self, value):
         super().validate(value)
         if type(value) is not list:
-            raise ValueError(f'Invalid value. Value  {self.name[1:]} must be list')
+            raise ValueError(f'Invalid value. Value {self.name[1:]} must be list')
         else:
             for item in value:
                 if type(item) is not int:
