@@ -61,7 +61,7 @@ class CharField(Validated):
         super().validate(value)
         if value is not None:
             if type(value) is not str:
-                raise ValueError(f'Invalid value. Value must be str')
+                raise ValueError(f'Invalid value. Value {self.name[1:]} must be str')
         return value
 
 
@@ -79,7 +79,7 @@ class PhoneField(Validated):
         super().validate(value)
         if value is not None:
             if not type(value) in (str, int):
-                raise ValueError(f'Invalid value. Value to be str or int')
+                raise ValueError(f'Invalid value. Value {self.name[1:]} to be str or int')
             if not re.match(r"^7\d{10}$", str(value)):
                 raise ValueError("Invalid phone number.")
         return value
@@ -90,7 +90,7 @@ class DateField(Validated):
         super().validate(value)
         if value is not None:
             if type(value) is not str:
-                raise ValueError(f'Invalid date. Value must be str DD.MM.YYYY')
+                raise ValueError(f'Invalid date. Value {self.name[1:]} must be str DD.MM.YYYY')
             if not re.match(r"^\d{2}\.\d{2}\.\d{4}$", str(value)):
                 raise ValueError("Invalide date format")
             else:
@@ -116,9 +116,9 @@ class GenderField(Validated):
         super().validate(value)
         if value is not None:
             if type(value) is not int:
-                raise ValueError(f'Invalid value. Value must be int')
+                raise ValueError(f'Invalid value. Value {self.name[1:]} must be int')
             if not re.match(r"^[0-2]?$", str(value)):
-                raise ValueError("Invalid value. Value must be between 0 and 2 digits.")
+                raise ValueError(f"Invalid value. Value {self.name[1:]} must be between 0 and 2 digits.")
         return value
 
 
@@ -126,11 +126,11 @@ class ClientIDsField(Validated):
     def validate(self, value):
         super().validate(value)
         if type(value) is not list:
-            raise ValueError(f'Invalid value. Value must be list')
+            raise ValueError(f'Invalid value. Value  {self.name[1:]} must be list')
         else:
             for item in value:
                 if type(item) is not int:
-                    raise ValueError(f'Invalid value. Item must be int')
+                    raise ValueError(f'Invalid value. Item {item} must be int')
         return value
 
 
@@ -211,12 +211,15 @@ class MethodRequest(object):
     login = CharField(required=True, nullable=True)
     token = CharField(required=True, nullable=True)
     arguments = ArgumentsField(required=True, nullable=True)
-    method = CharField(required=True, nullable=False)
+    method = CharField(required=True, nullable=True)
 
     def __init__(self, **kwargs):
-        if "login" not in kwargs or "token" not in kwargs or "method" not in kwargs or "arguments" not in kwargs:
-            raise ValueError("Missing arguments")
-        self.account = kwargs.get("account")
+        attr_ignore = set(["account", "is_admin"])
+        attrs = set(attr for attr in vars(MethodRequest).keys() if not attr.startswith('__'))
+        attrs_kwargs = [k for k in (attrs - set(kwargs) - attr_ignore)]
+        if len(attrs_kwargs):
+            raise ValueError(f"Missing arguments {attrs_kwargs}")
+        self.account = kwargs.get("account") if kwargs.get("account") else ""
         self.login = kwargs.get("login")
         self.method = kwargs.get("method")
         self.token = kwargs.get("token")
@@ -258,9 +261,9 @@ def method_handler(request, ctx, store):
             else:
                 code = FORBIDDEN
                 response = {"error": ERRORS[code]}
-        except ValueError:
+        except ValueError as e:
             code = INVALID_REQUEST
-            response = {"error": ERRORS[code]}
+            response = {"error": ERRORS[code] + f" {e}"}
     return response, code
 
 
