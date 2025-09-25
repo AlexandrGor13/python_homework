@@ -1,7 +1,9 @@
 import hashlib
+import json
 import datetime
 import functools
 import unittest
+from unittest.mock import patch
 import random
 
 import api
@@ -23,10 +25,10 @@ class TestSuite(unittest.TestCase):
     def setUp(self):
         self.context = {}
         self.headers = {}
-        self.settings = store.Store()
+        self.store = store.Store()
 
     def get_response(self, request):
-        return api.method_handler({"body": request, "headers": self.headers}, self.context, self.settings)
+        return api.method_handler({"body": request, "headers": self.headers}, self.context, self.store)
 
     def set_valid_auth(self, request):
         if request.get("login") == api.ADMIN_LOGIN:
@@ -129,17 +131,36 @@ class TestSuite(unittest.TestCase):
         {"client_ids": [1, 2], "date": "19.07.2017"},
         {"client_ids": [0]},
     ])
-    def test_ok_interests_request(self, arguments):
+    @patch.object(store.Store, 'get')
+    def test_ok_interests_request(self, arguments, mock_get):
         request = {"account": "horns&hoofs", "login": "h&f", "method": "clients_interests", "arguments": arguments}
         self.set_valid_auth(request)
         interests = ["cars", "pets", "travel", "hi-tech", "sport", "music", "books", "tv", "cinema", "geek", "otus"]
-        for i in range(1, 4):
-            self.settings.set(f"i:{i}", random.sample(interests, 2))
+        mock_get.return_value = json.dumps(random.sample(interests, 2))
         response, code = self.get_response(request)
         self.assertEqual(api.OK, code, arguments)
         self.assertEqual(len(arguments["client_ids"]), len(response))
         self.assertTrue(isinstance(v, list) for v in response.values())
         self.assertEqual(self.context.get("nclients"), len(arguments["client_ids"]))
+
+    @patch.object(store.Redis, 'ping')
+    def test_invalid_connect_store(self, mock_ping):
+        mock_ping.side_effect = ConnectionError
+        self.assertRaises(store.ConnectionError, store.Store().connect)
+
+    @patch.object(store.Redis, 'ping')
+    def test_ok_connect_store(self, mock_ping):
+        self.assertIsInstance(store.Store().connect(), store.Redis)
+
+    @patch.object(store.Redis, 'ping')
+    def test_invalid_get_store(self, mock_ping):
+        mock_ping.return_value = ConnectionError
+        self.assertRaises(store.TimeoutError, store.Store().get, None)
+
+    @patch.object(store.Redis, 'ping')
+    def test_invalid_cache_get_store(self, mock_ping):
+        mock_ping.return_value = ConnectionError
+        self.assertEqual(store.Store().cache_get(1), None)
 
 
 if __name__ == "__main__":
