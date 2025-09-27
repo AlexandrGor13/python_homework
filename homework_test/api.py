@@ -106,7 +106,7 @@ class BirthDayField(DateField):
     def validate(self, value):
         super().validate(value)
         if value is not None:
-            delta = (datetime.datetime.now() - datetime.datetime(*map(int, value.split('.')[::-1]))).days // 365
+            delta = (datetime.datetime.now() - datetime.datetime.strptime(value, '%d.%m.%Y')).days // 365
             if delta >= 70:
                 raise ValueError("Invalid birth day. Date must be between 0 and 70 days.")
         return value
