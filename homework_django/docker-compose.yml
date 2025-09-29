@@ -1,0 +1,13 @@
+
+services:
+  django_tutorial:
+    image: homework_django/django_tutorial
+    build:
+      context: .
+    ports:
+      - 8080:8080
+    command: bash -c "
+      python manage.py migrate --settings=mysite.settings
+      && python manage.py load_examples --settings=mysite.settings
+      && gunicorn mysite.wsgi -b 0.0.0.0:8080
+      "
