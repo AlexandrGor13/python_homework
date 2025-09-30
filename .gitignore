@@ -1,2 +1,4 @@
 .idea
 .venv
+/homework_django/.venv
+/homework_django/.idea
