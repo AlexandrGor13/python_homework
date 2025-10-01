@@ -1,39 +1,40 @@
 from datetime import datetime
 import socket
 import sys
-import threading
 import os
+import asyncio
 
+import aiofiles
 import pytz
 
 import parse
 
-
 HOST = 'localhost'
 PORT = 8080
-DOCUMENT_ROOT = './www' #root folder for static files
+DOCUMENT_ROOT = './www'  # root folder for static files
 
-def handle_request(client_socket):
-    try:        
-        request = client_socket.recv(1024)
-        request_data = parse.parse_request(request.decode())          
-        
+
+async def handle_request(reader, writer):
+    try:
+        request = await reader.read(1024)
+        request_data = parse.parse_request(request.decode())
+
         method = request_data.get("method")
         if method in ['GET', 'HEAD']:
             # create response and sendit back
-            response = generate_response(request_data)            
+            response = await generate_response(request_data)
         else:
             response = b'HTTP/1.1 405 Method Not Allowed'
-        client_socket.sendall(response)
-            
+        writer.write(response)
+        await writer.drain()
     finally:
-        client_socket.close()
-        
+        writer.close()
+        await writer.wait_closed()
 
-def generate_response(request_data):
+
+async def generate_response(request_data):
     method = request_data.get("method")
     path = DOCUMENT_ROOT + request_data.get("path")
-    headers = request_data.get("headers")
     index = 'index.html'
     response = b'HTTP/1.1 200 OK\r\n'
     try:
@@ -42,13 +43,8 @@ def generate_response(request_data):
         if os.path.isdir(path):
             path += index if path[-1] == '/' else '/' + index
         _, ext = os.path.splitext(path)
-        if ext in ['.png', '.jpg', '.jpeg', '.gif', '.swf']:
-            with open(path, 'rb') as f:
-                file = f.read()
-        else:
-            with open(path, 'r', encoding='utf-8') as f:
-                file = f.read()
-                file = file.encode()
+        async with aiofiles.open(path, 'rb') as f:
+            file = await f.read()
         ext_dict = {
             ".html": "text/html",
             ".css": "text/css",
@@ -78,35 +74,36 @@ def generate_response(request_data):
     except IOError:
         response = b'HTTP/1.1 403 Forbidden\r\n'
     return response
-    
 
-def start_server():
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((HOST, PORT))      
-    server_socket.listen(5)
-    while True:
-        client_socket, addr = server_socket.accept()
-        client_handler = threading.Thread(target=handle_request, args=(client_socket,))
-        client_handler.start()
+
+async def start_server():
+    server = await asyncio.start_server(handle_request, HOST, PORT)
+    addr = server.sockets[0].getsockname()
+    print(f'Сервер запущен на {addr}')
+
+    async with server:
+        await server.serve_forever()
 
 
 if __name__ == '__main__':
     if '-r' in sys.argv:
-        DOCUMENT_ROOT = sys.argv[sys.argv.index('-r')+1]
-    start_server()
+        DOCUMENT_ROOT = sys.argv[sys.argv.index('-r') + 1]
+    try:
+        asyncio.run(start_server())
+    except KeyboardInterrupt:
+        print('Сервер остановлен')
 
+# testing
+# sh ab -n 1000 -c 10 http://localhost:8080/index.html
 
-#testing
-#sh ab -n 1000 -c 10 http://localhost:8080/index.html
-
-#wrk -t12 -c400 -d30s http://localhost:8080/index.html
-
+# wrk -t12 -c400 -d30s http://localhost:8080/index.html
+#
+#
 # Running 30s test @ http://localhost:8080/index.html
 #   12 threads and 400 connections
 #   Thread Stats   Avg      Stdev     Max   +/- Stdev
-#     Latency     8.25ms   62.00ms   1.67s    98.21%
-#     Req/Sec   276.71    293.35     1.66k    84.25%
-#   55126 requests in 30.10s, 9.15MB read
-#   Socket errors: connect 0, read 55127, write 0, timeout 26
-# Requests/sec:   1831.53
-# Transfer/sec:    311.22KB
+#     Latency   172.15ms   23.71ms 540.38ms   79.63%
+#     Req/Sec   184.42     58.83   333.00     68.30%
+#   66083 requests in 30.02s, 16.89MB read
+# Requests/sec:   2201.21
+# Transfer/sec:    576.10KB
