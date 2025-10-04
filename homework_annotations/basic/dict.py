@@ -11,9 +11,6 @@ foo({"foo": "bar"})
 foo({"foo": 1})   # expect-type-error
 """
 
-def foo(x: dict[str, str]):
+
+def foo(x: dict[str, str]) -> None:
     pass
-
-
-foo({"foo": "bar"})
-foo({"foo": 1})   # expect-type-error

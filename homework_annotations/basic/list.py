@@ -12,9 +12,6 @@ foo(["foo", "bar"])
 foo(["foo", 1])   # expect-type-error
 """
 
-def foo(x: list[str]):
+
+def foo(x: list[str]) -> None:
     pass
-
-
-foo(["foo", "bar"])
-foo(["foo", 1])   # expect-type-error

@@ -13,10 +13,5 @@ foo("10")   # expect-type-error
 """
 
 
-def foo(x: int):
+def foo(x: int) -> None:
     pass
-
-
-foo(10)
-
-foo("10")   # expect-type-error

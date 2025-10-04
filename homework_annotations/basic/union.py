@@ -14,11 +14,6 @@ foo(1)
 foo([])  # expect-type-error
 """
 
-def foo(x: str | int):
+
+def foo(x: str | int) -> None:
     pass
-
-
-foo("foo")
-foo(1)
-
-foo([])  # expect-type-error

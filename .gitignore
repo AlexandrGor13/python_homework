@@ -2,3 +2,5 @@
 .venv
 /homework_django/.venv
 /homework_django/.idea
+/homework_annotations/.idea
+/homework_annotations/.venv
